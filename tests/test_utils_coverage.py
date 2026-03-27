@@ -32,10 +32,10 @@ def test_stringify_bytes():
 
 def test_convert_volume_to_raw():
     # MAX_RAW_VOLUME = 256, MAX_VOLUME = 60
-    assert convert_volume_to_raw(0) == 0
+    assert convert_volume_to_raw(60) == 0
     # MAX_RAW_VOLUME - (MAX_VOLUME - volume)
-    # 60 -> 256 - (60 - 60) = 256
-    assert convert_volume_to_raw(60) == 256
+    # 0 -> 256 - (60 - 0) = 196
+    assert convert_volume_to_raw(0) == 196
     # 30 -> 256 - (60 - 30) = 226
     assert convert_volume_to_raw(30) == 226
 

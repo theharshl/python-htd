@@ -23,6 +23,7 @@ def client():
     c._connection = MagicMock()
     c._subscribers = set()
     c._zone_data = {}
+    c._source_names = {}
     c._socket_lock = asyncio.Lock()
     c._callback_lock = asyncio.Lock()
     c._connected = True

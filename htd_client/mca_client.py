@@ -427,48 +427,40 @@ class HtdMcaClient(BaseClient):
             HtdMcaCommands.BALANCE_RIGHT_COMMAND
         )
 
-    # def get_source_names(self):
-    #     """
-    #     Query a zone and return `ZoneDetail`
-    #
-    #     Returns:
-    #         Dict[int, str]: a dictionary where each zone has a string value
-    #         of the source name
-    #     """
-    #
-    #     self._send_cmd(
-    #         0,
-    #         HtdMcaCommands.QUERY_SOURCE_NAME_COMMAND_CODE,
-    #         0
-    #     )
-    #
-    # def set_source_name(self, source: int, name: str):
-    #     """
-    #     Query a zone and return `ZoneDetail`
-    #
-    #     Args:
-    #         source (int): the source
-    #         name (str): the name of the source (max length of 7)
-    #
-    #     Returns:
-    #         ZoneDetail: a ZoneDetail instance representing the zone requested
-    #
-    #     Raises:
-    #         Exception: zone X is invalid
-    #     """
-    #
-    #     # htd_client.utils.validate_zone(zone)
-    #
-    #     extra_data = bytearray(
-    #         [ord(char) for char in name] + [0] * (7 - len(name)) + [0x00]
-    #     )
-    #
-    #     self._send_cmd(
-    #         0,
-    #         HtdMcaCommands.SET_SOURCE_NAME_COMMAND_CODE,
-    #         source,
-    #         extra_data
-    #     )
-    #
-    # def get_zone_names(self):
-    #     pass
+    async def async_set_dnd(self, zone: int, dnd: bool):
+        raise NotImplementedError("MCA does not support DND.")
+
+    async def async_set_echo(self, echo: bool):
+        raise NotImplementedError("MCA does not support echo setting.")
+
+    async def async_query_id(self):
+        raise NotImplementedError("MCA does not support ID query.")
+
+    async def async_query_all_zone_status(self):
+        raise NotImplementedError("MCA does not support global status query.")
+
+    async def async_query_zone_name(self, zone: int):
+        raise NotImplementedError("MCA does not support querying zone names.")
+
+    async def async_set_zone_name(self, zone: int, name: str):
+        raise NotImplementedError("MCA does not support setting zone names.")
+
+    async def async_query_source_name(self, source: int):
+        """Query a source name."""
+        await self._send_cmd(
+            0,
+            HtdMcaCommands.QUERY_SOURCE_NAME_COMMAND_CODE,
+            0
+        )
+
+    async def async_set_source_name(self, source: int, name: str):
+        """Set the name of a source (max 7 chars)."""
+        extra_data = bytearray(
+            [ord(char) for char in name[:7]] + [0] * (7 - len(name[:7])) + [0x00]
+        )
+        await self._send_cmd(
+            0,
+            HtdMcaCommands.SET_SOURCE_NAME_COMMAND_CODE,
+            source,
+            extra_data
+        )
