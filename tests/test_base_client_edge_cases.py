@@ -43,6 +43,7 @@ def client():
     c._connection = MagicMock()
     c._subscribers = set()
     c._zone_data = {}
+    c._zone_names = {}
     return c
 
 def test_process_next_command_invalid_header(client):

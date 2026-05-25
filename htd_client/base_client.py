@@ -96,6 +96,7 @@ class BaseClient(asyncio.Protocol):
         self._zone_data = {}
         self._zones_loaded = 0
         self._source_names = {}
+        self._zone_names = {}
         self._connection = None
         self._disconnected = False
 
@@ -334,6 +335,7 @@ class BaseClient(asyncio.Protocol):
 
         elif cmd == HtdCommonCommands.ZONE_NAME_RECEIVE_COMMAND:
             name = str(data[0:11].decode(errors="ignore").rstrip('\0')).lower()
+            self._zone_names[zone] = name
             if self.has_zone_data(zone):
                 self._zone_data[zone].name = name
 
@@ -505,6 +507,10 @@ class BaseClient(asyncio.Protocol):
     def get_source_name(self, source: int) -> str:
         """Get the name of a source if it has been fetched."""
         return self._source_names.get(source, f"Source {source}")
+
+    def get_zone_name(self, zone: int) -> str | None:
+        """Get the cached zone name, or None if not yet queried."""
+        return self._zone_names.get(zone)
 
     def get_zone(self, zone: int):
         """
