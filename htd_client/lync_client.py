@@ -386,99 +386,79 @@ class HtdLyncClient(BaseClient):
             balance
         )
 
-    # def query_zone_name(self, zone: int) -> str:
-    #     """
-    #     Query a zone and return `ZoneDetail`
-    #
-    #     Args:
-    #         zone (int): the zone
-    #
-    #     Returns:
-    #         ZoneDetail: a ZoneDetail instance representing the zone requested
-    #
-    #     Raises:
-    #         Exception: zone X is invalid
-    #     """
-    #
-    #     # htd_client.utils.validate_zone(zo+ne)
-    #
-    #     self._send_and_validate(
-    #         zone,
-    #         HtdLyncCommands.QUERY_ZONE_NAME_COMMAND_CODE,
-    #         0
-    #     )
+    async def async_query_all_zone_status(self):
+        """Query status of all zones"""
+        return await self._send_cmd(
+            0,
+            HtdLyncCommands.QUERY_COMMAND_CODE,
+            0
+        )
 
-    # def query_source_name(self, source: int, zone: int) -> str:
-    #     source_offset = source - 1
-    #
-    #     self._send_and_validate(
-    #         zone, HtdLyncCommands.QUERY_SOURCE_NAME_COMMAND_CODE, source_offset
-    #     )
-    #
-    #     source_name_bytes = response[4:14].strip(b'\x00')
-    #     source_name = htd_client.utils.decode_response(source_name_bytes)
-    #
-    #     return source_name
+    async def async_set_dnd(self, zone: int, dnd: bool):
+        """Set Do Not Disturb state on/off."""
+        return await self._async_send_and_validate(
+            lambda z: z.dnd == dnd,
+            zone,
+            HtdLyncCommands.COMMON_COMMAND_CODE,
+            HtdLyncCommands.DND_ON_COMMAND_CODE if dnd else HtdLyncCommands.DND_OFF_COMMAND_CODE
+        )
 
-    # def set_source_name(self, source: int, zone: int, name: str):
-    #     """
-    #     Query a zone and return `ZoneDetail`
-    #
-    #     Args:
-    #         source (int): the source
-    #         zone: (int): the zone
-    #         name (str): the name of the source (max length of 7)
-    #
-    #     Returns:
-    #         bytes: a ZoneDetail instance representing the zone requested
-    #
-    #     Raises:
-    #         Exception: zone X is invalid
-    #     """
-    #
-    #     # htd_client.utils.validate_zone(zone)
-    #
-    #     extra_data = bytes(
-    #         [ord(char) for char in name] + [0] * (11 - len(name))
-    #     )
-    #
-    #     self._send_and_validate(
-    #         zone,
-    #         HtdLyncCommands.SET_SOURCE_NAME_COMMAND_CODE,
-    #         source)
-    #         extra_data
-    #     )
-    #
-    # def get_zone_names(self):
-    #     self._send_cmd(
-    #         1,
-    #         HtdLyncCommands.QUERY_ZONE_NAME_COMMAND_CODE,
-    #         1
-    #     )
-    # def set_zone_name(self, zone: int, name: str):
-    #     """
-    #     Query a zone and return `ZoneDetail`
-    #
-    #     Args:
-    #         zone: (int): the zone
-    #         name (str): the name of the source (max length of 7)
-    #
-    #     Returns:
-    #         bytes: a ZoneDetail instance representing the zone requested
-    #
-    #     Raises:
-    #         Exception: zone X is invalid
-    #     """
-    #
-    #     # htd_client.utils.validate_zone(zone)
-    #
-    #     extra_data = bytes(
-    #         [ord(char) for char in name] + [0] * (11 - len(name))
-    #     )
-    #
-    #     self._send_and_validate(
-    #         zone,
-    #         HtdLyncCommands.SET_ZONE_NAME_COMMAND_CODE,
-    #         0)
-    #         extra_data
-    #     )
+    async def async_set_echo(self, echo: bool):
+        """Set whether the unit should echo commands back."""
+        return await self._send_cmd(
+            0,
+            HtdLyncCommands.SET_ECHO_COMMAND_CODE if hasattr(HtdLyncCommands, "SET_ECHO_COMMAND_CODE") else 0x19,
+            0xFF if echo else 0x00
+        )
+
+    async def async_query_id(self):
+        """Query device ID."""
+        return await self._send_cmd(
+            0,
+            HtdLyncCommands.QUERY_ID_CODE if hasattr(HtdLyncCommands, "QUERY_ID_CODE") else 0x08,
+            0x00
+        )
+
+    async def async_query_zone_name(self, zone: int):
+        """Query the name of a zone."""
+        await self._send_cmd(
+            zone,
+            HtdLyncCommands.QUERY_ZONE_NAME_COMMAND_CODE,
+            0
+        )
+
+    async def async_query_source_name(self, source: int):
+        """Query the name of a source."""
+        await self._send_cmd(
+            1,
+            HtdLyncCommands.QUERY_SOURCE_NAME_COMMAND_CODE,
+            source
+        )
+
+    async def async_set_source_name(self, source: int, name: str):
+        """Set the name of a source (max 10 chars)."""
+        trimmed = name[:10]
+        encoded = list(trimmed.encode("ascii", errors="ignore"))
+        encoded.extend([0] * (10 - len(encoded)))
+        extra_data = bytearray(encoded + [0])
+        
+        await self._send_cmd(
+            0,
+            HtdLyncCommands.SET_SOURCE_NAME_COMMAND_CODE,
+            source,
+            extra_data
+        )
+
+    async def async_set_zone_name(self, zone: int, name: str):
+        """Set the name of a zone (max 10 chars)."""
+        trimmed = name[:10]
+        encoded = list(trimmed.encode("ascii", errors="ignore"))
+        encoded.extend([0] * (10 - len(encoded)))
+        extra_data = bytearray(encoded + [0])
+
+        await self._send_cmd(
+            zone,
+            HtdLyncCommands.SET_ZONE_NAME_COMMAND_CODE,
+            0,
+            extra_data
+        )

@@ -95,7 +95,7 @@ class BaseClient(asyncio.Protocol):
         self._buffer = bytearray()
         self._zone_data = {}
         self._zones_loaded = 0
-        self._zone_data = {}
+        self._source_names = {}
         self._connection = None
         self._disconnected = False
 
@@ -330,14 +330,16 @@ class BaseClient(asyncio.Protocol):
             # remove the extra null bytes
 
         elif cmd == HtdCommonCommands.ZONE_NAME_RECEIVE_COMMAND:
-            name = str(data[0:11].decode().rstrip('\0')).lower()
-            self._zone_data[zone].name = name
+            name = str(data[0:11].decode(errors="ignore").rstrip('\0')).lower()
+            if self.has_zone_data(zone):
+                self._zone_data[zone].name = name
 
-        elif cmd == HtdCommonCommands.SOURCE_NAME_RECEIVE_COMMAND:
-            source = data[11]
-            name = str(data[0:10].decode().rstrip('\0')).lower()
-            # self.zone_info[zone]['source_list'][source] = name
-            # self.source_info[zone][name] = source
+        elif cmd == HtdCommonCommands.SOURCE_NAME_RECEIVE_COMMAND or cmd == HtdCommonCommands.ZONE_SOURCE_NAME_RECEIVE_COMMAND_LYNC:
+            source = data[11] + 1
+            name = str(data[0:10].decode(errors="ignore").rstrip('\0')).lower()
+            self._source_names[source] = name
+            if self.has_zone_data(zone):
+                self._zone_data[zone].source_name = name
         #
         # elif cmd == HtdCommonCommands.MP3_ON_RECEIVE_COMMAND:
         #     self.mp3_status['state'] = 'on'
@@ -389,7 +391,7 @@ class BaseClient(asyncio.Protocol):
             HtdConstants.POWER_STATE_TOGGLE_INDEX
         )
         zone.mute = htd_client.utils.is_bit_on(state_toggles, HtdConstants.MUTE_STATE_TOGGLE_INDEX)
-        zone.mode = htd_client.utils.is_bit_on(state_toggles, HtdConstants.MODE_STATE_TOGGLE_INDEX)
+        zone.dnd = htd_client.utils.is_bit_on(state_toggles, HtdConstants.DND_STATE_TOGGLE_INDEX)
 
         zone.source = zone_data[HtdConstants.SOURCE_ZONE_DATA_INDEX] + HtdConstants.SOURCE_QUERY_OFFSET
         zone.volume = volume
@@ -497,6 +499,10 @@ class BaseClient(asyncio.Protocol):
         """
         return self._model_info['sources']
 
+    def get_source_name(self, source: int) -> str:
+        """Get the name of a source if it has been fetched."""
+        return self._source_names.get(source, f"Source {source}")
+
     def get_zone(self, zone: int):
         """
         Query a zone and return `ZoneDetail`
@@ -592,4 +598,36 @@ class BaseClient(asyncio.Protocol):
 
     @abstractmethod
     async def async_balance_right(self, zone: int):
+        pass
+
+    @abstractmethod
+    async def async_set_dnd(self, zone: int, dnd: bool):
+        pass
+
+    @abstractmethod
+    async def async_set_echo(self, echo: bool):
+        pass
+
+    @abstractmethod
+    async def async_query_id(self):
+        pass
+
+    @abstractmethod
+    async def async_query_all_zone_status(self):
+        pass
+
+    @abstractmethod
+    async def async_query_zone_name(self, zone: int):
+        pass
+
+    @abstractmethod
+    async def async_query_source_name(self, source: int):
+        pass
+
+    @abstractmethod
+    async def async_set_zone_name(self, zone: int, name: str):
+        pass
+
+    @abstractmethod
+    async def async_set_source_name(self, source: int, name: str):
         pass
