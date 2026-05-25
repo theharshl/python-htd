@@ -2,8 +2,7 @@ import asyncio
 import pytest
 from unittest.mock import MagicMock
 from htd_client.lync_client import HtdLyncClient
-from htd_client.constants import HtdDeviceKind, HtdCommonCommands
-from htd_client.models import ZoneDetail
+from htd_client.constants import HtdDeviceKind
 
 
 @pytest.fixture
@@ -45,10 +44,6 @@ def test_zone_name_cached_independently_of_zone_data(lync_client):
     assert lync_client.get_zone_name(2) == "office"
 
 
-def test_zone_name_also_updates_zone_data_when_present(lync_client):
-    # When zone_data already exists, _zone_data[zone].name should also be updated
-    lync_client._zone_data[1] = ZoneDetail(1)
+def test_get_zone_name_reads_from_zone_names_dict(lync_client):
     lync_client._zone_names[1] = "living room"
-    lync_client._zone_data[1].name = "living room"
-    assert lync_client._zone_data[1].name == "living room"
     assert lync_client.get_zone_name(1) == "living room"
