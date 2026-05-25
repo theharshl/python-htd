@@ -433,7 +433,7 @@ class HtdLyncClient(BaseClient):
         """Set whether the unit should echo commands back."""
         return await self._send_cmd(
             0,
-            HtdLyncCommands.SET_ECHO_COMMAND_CODE if hasattr(HtdLyncCommands, "SET_ECHO_COMMAND_CODE") else 0x19,
+            HtdLyncCommands.SET_ECHO_COMMAND_CODE,
             0xFF if echo else 0x00
         )
 
@@ -441,7 +441,7 @@ class HtdLyncClient(BaseClient):
         """Query device ID."""
         return await self._send_cmd(
             0,
-            HtdLyncCommands.QUERY_ID_CODE if hasattr(HtdLyncCommands, "QUERY_ID_CODE") else 0x08,
+            HtdLyncCommands.QUERY_ID_CODE,
             0x00
         )
 

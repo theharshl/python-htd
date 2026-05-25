@@ -612,6 +612,10 @@ class BaseClient(asyncio.Protocol):
         pass
 
     @abstractmethod
+    async def async_set_balance(self, zone: int, balance: int):
+        pass
+
+    @abstractmethod
     async def async_set_dnd(self, zone: int, dnd: bool):
         pass
 
