@@ -76,7 +76,8 @@ async def async_send_command(
     loop: asyncio.AbstractEventLoop,
     cmd: bytes,
     network_address: Tuple[str, int] = None,
-    serial_address: str = None
+    serial_address: str = None,
+    settle_delay: float = 0
 ) -> bytes | None:
     if serial_address is not None:
         reader, writer = await open_serial_connection(
@@ -85,6 +86,9 @@ async def async_send_command(
             baudrate=38400,
             timeout=HtdConstants.DEFAULT_COMMAND_RETRY_TIMEOUT
         )
+
+        if settle_delay:
+            await asyncio.sleep(settle_delay)
 
     elif network_address is not None:
         host, port = network_address
