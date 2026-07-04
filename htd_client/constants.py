@@ -69,6 +69,11 @@ class HtdConstants:
     # the device is flakey, let's retry a bunch of times
     DEFAULT_RETRY_ATTEMPTS = 3
 
+    # some USB-serial adapters (e.g. Prolific) toggle DTR on port open, which can
+    # cause the gateway to reset. give it a moment to settle before the first
+    # write, only paid once at startup during model detection.
+    MODEL_PROBE_SETTLE_DELAY = 1.5
+
     # the port of the device, default is 10006
     DEFAULT_PORT = 10006
 

@@ -98,6 +98,42 @@ async def test_async_send_command_serial():
 @pytest.mark.asyncio
 async def test_async_send_command_no_address():
     mock_loop = MagicMock()
-    
+
     with pytest.raises(ValueError, match="unable to connect"):
         await async_send_command(mock_loop, b"cmd")
+
+@pytest.mark.asyncio
+async def test_async_send_command_serial_settle_delay():
+    mock_loop = MagicMock()
+    mock_reader = AsyncMock()
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.wait_closed = AsyncMock()
+
+    mock_reader.read.return_value = b"response" + HtdConstants.MESSAGE_HEADER
+
+    with patch("htd_client.utils.open_serial_connection", new_callable=AsyncMock) as mock_open, \
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_open.return_value = (mock_reader, mock_writer)
+
+        await async_send_command(mock_loop, b"cmd", serial_address="/dev/ttyUSB0", settle_delay=1.5)
+
+        mock_sleep.assert_called_once_with(1.5)
+
+@pytest.mark.asyncio
+async def test_async_send_command_no_settle_delay_by_default():
+    mock_loop = MagicMock()
+    mock_reader = AsyncMock()
+    mock_writer = MagicMock()
+    mock_writer.drain = AsyncMock()
+    mock_writer.wait_closed = AsyncMock()
+
+    mock_reader.read.return_value = b"response" + HtdConstants.MESSAGE_HEADER
+
+    with patch("htd_client.utils.open_serial_connection", new_callable=AsyncMock) as mock_open, \
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_open.return_value = (mock_reader, mock_writer)
+
+        await async_send_command(mock_loop, b"cmd", serial_address="/dev/ttyUSB0")
+
+        mock_sleep.assert_not_called()

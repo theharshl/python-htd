@@ -24,13 +24,41 @@ async def test_async_get_model_info_success():
 @pytest.mark.asyncio
 async def test_async_get_model_info_failure():
     mock_loop = MagicMock()
-    
-    with patch("htd_client.utils.async_send_command", new_callable=AsyncMock) as mock_send:
+
+    with patch("htd_client.utils.async_send_command", new_callable=AsyncMock) as mock_send, \
+         patch("asyncio.sleep", new_callable=AsyncMock):
         mock_send.return_value = b"Unknown Device"
-        
-        model = await async_get_model_info(loop=mock_loop, network_address=("1.2.3.4", 10006))
-        
+
+        model = await async_get_model_info(loop=mock_loop, network_address=("1.2.3.4", 10006), retry_attempts=2)
+
         assert model is None
+        assert mock_send.call_count == 2
+
+@pytest.mark.asyncio
+async def test_async_get_model_info_retries_then_succeeds():
+    mock_loop = MagicMock()
+
+    with patch("htd_client.utils.async_send_command", new_callable=AsyncMock) as mock_send, \
+         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        mock_send.side_effect = [b"Unknown Device", b"Wangine_MCA66"]
+
+        model = await async_get_model_info(loop=mock_loop, network_address=("1.2.3.4", 10006), retry_attempts=3)
+
+        assert model == HtdConstants.SUPPORTED_MODELS["mca66"]
+        assert mock_send.call_count == 2
+        mock_sleep.assert_called_once_with(HtdConstants.DEFAULT_COMMAND_RETRY_TIMEOUT)
+
+@pytest.mark.asyncio
+async def test_async_get_model_info_passes_settle_delay_for_serial():
+    mock_loop = MagicMock()
+
+    with patch("htd_client.utils.async_send_command", new_callable=AsyncMock) as mock_send:
+        mock_send.return_value = b"Wangine_MCA66"
+
+        await async_get_model_info(loop=mock_loop, serial_address="/dev/ttyUSB0")
+
+        _, kwargs = mock_send.call_args
+        assert kwargs["settle_delay"] == HtdConstants.MODEL_PROBE_SETTLE_DELAY
 
 @pytest.mark.asyncio
 async def test_async_get_client_mca():
@@ -63,9 +91,19 @@ async def test_async_get_client_lync():
 @pytest.mark.asyncio
 async def test_async_get_client_unknown():
     mock_loop = MagicMock()
-    
+
     with patch("htd_client.async_get_model_info", new_callable=AsyncMock) as mock_get_info:
         mock_get_info.return_value = {"kind": "unknown_kind"}
-        
+
         with pytest.raises(ValueError, match="Unknown Device Kind"):
             await async_get_client(loop=mock_loop, network_address=("1.2.3.4", 10006))
+
+@pytest.mark.asyncio
+async def test_async_get_client_raises_clear_error_when_model_undetected():
+    mock_loop = MagicMock()
+
+    with patch("htd_client.async_get_model_info", new_callable=AsyncMock) as mock_get_info:
+        mock_get_info.return_value = None
+
+        with pytest.raises(ValueError, match="Unable to detect HTD device model"):
+            await async_get_client(loop=mock_loop, serial_address="/dev/serial/by-id/usb-example")
