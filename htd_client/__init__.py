@@ -101,26 +101,48 @@ async def async_get_model_info(
         1, HtdCommonCommands.MODEL_QUERY_COMMAND_CODE, 0
     )
 
-    for attempt in range(retry_attempts):
-        model_id = await htd_client.utils.async_send_command(
-            loop if loop is not None else asyncio.get_running_loop(),
-            cmd,
-            network_address=network_address,
-            serial_address=serial_address,
-            settle_delay=HtdConstants.MODEL_PROBE_SETTLE_DELAY if serial_address is not None else 0,
-        )
-
+    def find_model(data: bytes) -> HtdModelInfo | None:
         for model_name in HtdConstants.SUPPORTED_MODELS:
             model = HtdConstants.SUPPORTED_MODELS[model_name]
-            if model["identifier"] in model_id:
+            if model["identifier"] in data:
+                return model
+        return None
+
+    # open the connection once and retry on it: every serial port open can
+    # toggle DTR and reset the gateway, so re-opening per attempt would keep
+    # resetting the device we are trying to probe
+    reader, writer = await htd_client.utils.async_open_connection(
+        loop if loop is not None else asyncio.get_running_loop(),
+        network_address=network_address,
+        serial_address=serial_address,
+        settle_delay=HtdConstants.SERIAL_SETTLE_DELAY if serial_address is not None else 0,
+    )
+
+    try:
+        for attempt in range(retry_attempts):
+            writer.write(cmd)
+            await writer.drain()
+
+            data = await htd_client.utils.async_read_response(
+                reader,
+                response_complete=lambda d: find_model(d) is not None,
+                timeout=HtdConstants.RESPONSE_TIMEOUT,
+                quiet_window=HtdConstants.RESPONSE_QUIET_WINDOW,
+            )
+
+            model = find_model(data)
+            if model is not None:
                 return model
 
-        if attempt < retry_attempts - 1:
-            _LOGGER.warning(
-                "Model probe attempt %d/%d failed to match a known device, retrying",
-                attempt + 1,
-                retry_attempts,
-            )
-            await asyncio.sleep(HtdConstants.DEFAULT_COMMAND_RETRY_TIMEOUT)
+            if attempt < retry_attempts - 1:
+                _LOGGER.warning(
+                    "Model probe attempt %d/%d failed to match a known device, retrying",
+                    attempt + 1,
+                    retry_attempts,
+                )
+                await asyncio.sleep(HtdConstants.DEFAULT_COMMAND_RETRY_TIMEOUT)
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
     return None

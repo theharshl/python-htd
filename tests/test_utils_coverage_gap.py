@@ -20,21 +20,13 @@ def test_build_command_with_extra_data():
     assert cmd[6] == 5
 
 @pytest.mark.asyncio
-async def test_async_send_command_no_header():
-    # Test async_send_command when response has no header (line 104)
-    loop = AsyncMock()
-    # Mock open_connection
+async def test_async_read_response_returns_empty_on_eof():
+    # An immediately-closed stream yields empty bytes, not a hang
     reader = AsyncMock()
-    writer = AsyncMock()
-    
-    # Return data without header
-    reader.read.return_value = b'\x00\x00\x00\x00' 
-    
-    with patch('asyncio.open_connection', return_value=(reader, writer)):
-        response = await htd_client.utils.async_send_command(
-            loop,
-            b'cmd',
-            network_address=('localhost', 1234)
-        )
-        
-        assert response == b'\x00\x00\x00\x00'
+    reader.read.return_value = b""
+
+    response = await htd_client.utils.async_read_response(
+        reader, timeout=0.5, quiet_window=0.02
+    )
+
+    assert response == b""

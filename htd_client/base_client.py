@@ -128,6 +128,11 @@ class BaseClient(asyncio.Protocol):
 
 
     async def _heartbeat(self):
+        # opening a serial port can toggle DTR and reset the gateway; wait for
+        # it to come back or the first refresh command is lost
+        if self._serial_address is not None:
+            await asyncio.sleep(HtdConstants.SERIAL_SETTLE_DELAY)
+
         while self._connected:
             await self.refresh()
             await asyncio.sleep(60)

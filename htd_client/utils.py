@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from typing import Literal, Tuple
 
 from serial_asyncio import open_serial_connection
@@ -72,21 +73,21 @@ def stringify_bytes(data: bytes) -> str:
     return ret_val
 
 
-async def async_send_command(
+async def async_open_connection(
     loop: asyncio.AbstractEventLoop,
-    cmd: bytes,
     network_address: Tuple[str, int] = None,
     serial_address: str = None,
     settle_delay: float = 0
-) -> bytes | None:
+) -> Tuple[asyncio.StreamReader, asyncio.StreamWriter]:
     if serial_address is not None:
         reader, writer = await open_serial_connection(
             loop=loop,
             url=serial_address,
             baudrate=38400,
-            timeout=HtdConstants.DEFAULT_COMMAND_RETRY_TIMEOUT
         )
 
+        # opening the port can toggle DTR and reset the gateway; wait for it
+        # to come back before the first write
         if settle_delay:
             await asyncio.sleep(settle_delay)
 
@@ -97,17 +98,67 @@ async def async_send_command(
     else:
         raise ValueError("unable to connect, no address")
 
-    writer.write(cmd)
-    await writer.drain()
-    data = await reader.read(MAX_BYTES_TO_RECEIVE)
-    writer.close()
-    await writer.wait_closed()
+    return reader, writer
 
-    header_index = data.find(HtdConstants.MESSAGE_HEADER)
-    if header_index == -1:
-        return data
 
-    return data[0:header_index]
+async def async_read_response(
+    reader: asyncio.StreamReader,
+    response_complete: callable = None,
+    timeout: float = None,
+    quiet_window: float = None,
+) -> bytes:
+    """
+    Read a response, tolerating slow delivery. A cheap USB-serial adapter can
+    split a reply across many small reads, so a single read() may return only
+    a fragment. Accumulate reads until `response_complete` matches the buffer,
+    the line goes quiet, or the overall deadline expires.
+
+    Args:
+        reader (asyncio.StreamReader): the stream to read from
+        response_complete (callable): optional predicate called with the
+            accumulated bytes; return True to stop reading early
+        timeout (float): overall deadline in seconds for the full response
+        quiet_window (float): once data has arrived, how long the line must
+            stay quiet before the response is considered complete
+
+    Returns:
+        bytes: whatever data accumulated before the deadline, possibly empty
+    """
+    if timeout is None:
+        timeout = HtdConstants.RESPONSE_TIMEOUT
+
+    if quiet_window is None:
+        quiet_window = HtdConstants.RESPONSE_QUIET_WINDOW
+
+    data = bytearray()
+    deadline = time.monotonic() + timeout
+
+    while True:
+        if response_complete is not None and response_complete(bytes(data)):
+            break
+
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+
+        wait = min(quiet_window, remaining) if data else remaining
+
+        try:
+            chunk = await asyncio.wait_for(
+                reader.read(MAX_BYTES_TO_RECEIVE), wait
+            )
+        except asyncio.TimeoutError:
+            if data:
+                # the line went quiet, the response is as complete as it gets
+                break
+            continue
+
+        if not chunk:
+            break
+
+        data += chunk
+
+    return bytes(data)
 
 
 def convert_value(value: int):
