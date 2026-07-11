@@ -70,9 +70,18 @@ class HtdConstants:
     DEFAULT_RETRY_ATTEMPTS = 3
 
     # some USB-serial adapters (e.g. Prolific) toggle DTR on port open, which can
-    # cause the gateway to reset. give it a moment to settle before the first
-    # write, only paid once at startup during model detection.
-    MODEL_PROBE_SETTLE_DELAY = 1.5
+    # cause the gateway to reset. give it a moment to settle after every serial
+    # port open before the first write (model probe and persistent connection).
+    SERIAL_SETTLE_DELAY = 1.5
+
+    # a slow USB-serial adapter can split a reply across many small reads and
+    # a resetting gateway can delay it; keep reading until the response matches,
+    # the line goes quiet, or this overall deadline expires
+    RESPONSE_TIMEOUT = 3.0
+
+    # once some data has arrived, how long the line must stay quiet before we
+    # consider the response complete
+    RESPONSE_QUIET_WINDOW = 0.3
 
     # the port of the device, default is 10006
     DEFAULT_PORT = 10006

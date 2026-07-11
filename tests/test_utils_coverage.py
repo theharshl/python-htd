@@ -2,13 +2,14 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from htd_client.constants import HtdConstants, HtdDeviceKind
 from htd_client.utils import (
-    convert_value, 
-    stringify_bytes_raw, 
-    stringify_bytes, 
-    convert_volume_to_raw, 
-    decode_response, 
-    parse_zone_name, 
-    async_send_command
+    convert_value,
+    stringify_bytes_raw,
+    stringify_bytes,
+    convert_volume_to_raw,
+    decode_response,
+    parse_zone_name,
+    async_open_connection,
+    async_read_response
 )
 
 def test_convert_value():
@@ -53,87 +54,85 @@ def test_parse_zone_name():
     assert parse_zone_name(data) == "Zone1"
 
 @pytest.mark.asyncio
-async def test_async_send_command_network():
+async def test_async_open_connection_network():
     mock_loop = MagicMock()
     mock_reader = AsyncMock()
     mock_writer = MagicMock()
-    mock_writer.drain = AsyncMock()
-    mock_writer.wait_closed = AsyncMock()
-    
-    # Setup mock reader to return data with header. Header is 0x02 0x00.
-    # We should return header first then data? Or is it finding header in response?
-    # data.find(HEADER). If found, returns data[0:header_index].
-    # So if we return b"RESPONSE" + HEADER, it returns "RESPONSE".
-    mock_reader.read.return_value = b"response" + HtdConstants.MESSAGE_HEADER
-    
+
     with patch("asyncio.open_connection", new_callable=AsyncMock) as mock_open:
         mock_open.return_value = (mock_reader, mock_writer)
-        
-        response = await async_send_command(mock_loop, b"cmd", network_address=("1.2.3.4", 1234))
-        
+
+        reader, writer = await async_open_connection(mock_loop, network_address=("1.2.3.4", 1234))
+
         mock_open.assert_called_with("1.2.3.4", 1234)
-        mock_writer.write.assert_called_with(b"cmd")
-        mock_writer.drain.assert_called()
-        mock_writer.close.assert_called()
-        assert response == b"response"
+        assert reader is mock_reader
+        assert writer is mock_writer
 
 @pytest.mark.asyncio
-async def test_async_send_command_serial():
+async def test_async_open_connection_serial():
     mock_loop = MagicMock()
     mock_reader = AsyncMock()
     mock_writer = MagicMock()
-    mock_writer.drain = AsyncMock()
-    mock_writer.wait_closed = AsyncMock()
-    
-    mock_reader.read.return_value = b"response" + HtdConstants.MESSAGE_HEADER
-    
+
     with patch("htd_client.utils.open_serial_connection", new_callable=AsyncMock) as mock_open:
         mock_open.return_value = (mock_reader, mock_writer)
-        
-        response = await async_send_command(mock_loop, b"cmd", serial_address="/dev/ttyUSB0")
-        
+
+        reader, writer = await async_open_connection(mock_loop, serial_address="/dev/ttyUSB0")
+
         mock_open.assert_called()
-        assert response == b"response"
+        assert reader is mock_reader
+        assert writer is mock_writer
 
 @pytest.mark.asyncio
-async def test_async_send_command_no_address():
+async def test_async_open_connection_no_address():
     mock_loop = MagicMock()
 
     with pytest.raises(ValueError, match="unable to connect"):
-        await async_send_command(mock_loop, b"cmd")
+        await async_open_connection(mock_loop)
 
 @pytest.mark.asyncio
-async def test_async_send_command_serial_settle_delay():
+async def test_async_open_connection_serial_settle_delay():
     mock_loop = MagicMock()
     mock_reader = AsyncMock()
     mock_writer = MagicMock()
-    mock_writer.drain = AsyncMock()
-    mock_writer.wait_closed = AsyncMock()
-
-    mock_reader.read.return_value = b"response" + HtdConstants.MESSAGE_HEADER
 
     with patch("htd_client.utils.open_serial_connection", new_callable=AsyncMock) as mock_open, \
          patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         mock_open.return_value = (mock_reader, mock_writer)
 
-        await async_send_command(mock_loop, b"cmd", serial_address="/dev/ttyUSB0", settle_delay=1.5)
+        await async_open_connection(mock_loop, serial_address="/dev/ttyUSB0", settle_delay=1.5)
 
         mock_sleep.assert_called_once_with(1.5)
 
 @pytest.mark.asyncio
-async def test_async_send_command_no_settle_delay_by_default():
+async def test_async_open_connection_no_settle_delay_by_default():
     mock_loop = MagicMock()
     mock_reader = AsyncMock()
     mock_writer = MagicMock()
-    mock_writer.drain = AsyncMock()
-    mock_writer.wait_closed = AsyncMock()
-
-    mock_reader.read.return_value = b"response" + HtdConstants.MESSAGE_HEADER
 
     with patch("htd_client.utils.open_serial_connection", new_callable=AsyncMock) as mock_open, \
          patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
         mock_open.return_value = (mock_reader, mock_writer)
 
-        await async_send_command(mock_loop, b"cmd", serial_address="/dev/ttyUSB0")
+        await async_open_connection(mock_loop, serial_address="/dev/ttyUSB0")
 
         mock_sleep.assert_not_called()
+
+@pytest.mark.asyncio
+async def test_async_read_response_returns_after_quiet_window():
+    """Without a predicate, reading stops once the line goes quiet."""
+    import asyncio as _asyncio
+
+    mock_reader = MagicMock()
+    chunks = [b"response"]
+
+    async def read(n):
+        if chunks:
+            return chunks.pop(0)
+        await _asyncio.get_running_loop().create_future()
+
+    mock_reader.read = read
+
+    response = await async_read_response(mock_reader, timeout=0.5, quiet_window=0.02)
+
+    assert response == b"response"
