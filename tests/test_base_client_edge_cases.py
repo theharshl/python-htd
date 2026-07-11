@@ -86,29 +86,51 @@ def test_process_next_command_checksum_fail(client):
     # Expected len 9.
     data = bytes([0]*9)
     checksum = 0xFF # Invalid
-    
+
     full = header + bytes([zone, cmd]) + data + bytes([checksum])
-    
-    # We need to mock calculate_checksum to fail? Or just pass wrong checksum.
-    # Correct checksum is calculate_checksum...
-    # We pass 0xFF.
-    
+
+    # A checksum failure means the declared frame length can't be trusted
+    # (it may be a coincidental match on garbage/misaligned bytes), so we
+    # must NOT skip the whole presumed frame. Resync minimally by only the
+    # header length, same as the unknown-command path, so the next byte
+    # onward is re-scanned for a real header instead of staying corrupted.
     zone_ret, consumed = client._process_next_command(full)
-    # Returns chunk len but zone is returned?
-    # expected_len = 9.
-    # end_index = 0 + 2 + 2 + 9 = 13?
-    # Wait: end = start + HEADER + 2 + expected_len?
-    # No: end = start + HEADER + 2 + length?
-    # Code: end_message_index = start + HEADER_LEN + 2 + expected_length
-    # Wait, command map gives data length.
-    # frame includes zone + cmd + data?
-    # Checksum is on zone+cmd+data.
-    
-    assert consumed == len(full)
+    assert zone_ret is None
+    assert consumed == HtdConstants.MESSAGE_HEADER_LENGTH
+
     # Check that _parse_command NOT called
     with patch.object(client, '_parse_command') as mock_parse:
         client._process_next_command(full)
         mock_parse.assert_not_called()
+
+def test_process_next_command_checksum_fail_recovers_next_frame(client):
+    """A single corrupted frame must not desync parsing of the frame after it."""
+    header = bytes([HtdConstants.HEADER_BYTE, HtdConstants.RESERVED_BYTE])
+
+    def build_zone_status(zone, checksum_override=None):
+        cmd = HtdCommonCommands.ZONE_STATUS_RECEIVE_COMMAND
+        data = bytes([0, 0, 0, 0, 1, 0xe2, 0, 0, 0])
+        frame = header + bytes([zone, cmd]) + data
+        checksum = checksum_override
+        if checksum is None:
+            checksum = sum(frame) & 0xFF
+        return frame + bytes([checksum])
+
+    bad_frame = build_zone_status(1, checksum_override=0xFF)
+    good_frame = build_zone_status(2)
+    buffer = bad_frame + good_frame
+
+    with patch.object(client, '_parse_command') as mock_parse:
+        zone_ret, consumed = client._process_next_command(buffer)
+        assert zone_ret is None
+        assert consumed == HtdConstants.MESSAGE_HEADER_LENGTH
+        mock_parse.assert_not_called()
+
+        # advance past the corrupted frame's header the same way data_received does
+        remaining = buffer[consumed:]
+        zone_ret, consumed = client._process_next_command(remaining)
+        assert zone_ret == 2
+        mock_parse.assert_called_once()
 
 def test_parse_command_Zonename(client):
     zone = 1

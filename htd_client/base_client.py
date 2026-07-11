@@ -290,6 +290,13 @@ class BaseClient(asyncio.Protocol):
         else:
             _LOGGER.info("Bad checksum %02x != %02x", frame_sum_checksum, checksum)
 
+            # the checksum mismatch means this frame's declared length can't
+            # be trusted (zone/command may be a coincidental match on
+            # misaligned or corrupted bytes), so don't skip the full
+            # presumed frame or a genuinely desynced buffer never recovers.
+            # Resync minimally, same as the unknown-command path above.
+            return None, start_message_index + HtdConstants.MESSAGE_HEADER_LENGTH
+
         return zone, chunk_length
 
     def _parse_command(self, zone, cmd, data):
