@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 from htd_client import async_get_client, async_get_model_info, HtdMcaClient, HtdLyncClient
 from htd_client.constants import HtdConstants, HtdDeviceKind
+from htd_client.exceptions import HtdConnectionError
 
 def _mock_connection():
     mock_reader = AsyncMock()
@@ -121,5 +122,35 @@ async def test_async_get_client_raises_clear_error_when_model_undetected():
     with patch("htd_client.async_get_model_info", new_callable=AsyncMock) as mock_get_info:
         mock_get_info.return_value = None
 
-        with pytest.raises(ValueError, match="Unable to detect HTD device model"):
+        with pytest.raises(HtdConnectionError, match="Unable to detect HTD device model"):
             await async_get_client(loop=mock_loop, serial_address="/dev/serial/by-id/usb-example")
+
+@pytest.mark.asyncio
+async def test_async_get_client_wraps_os_error_from_probe():
+    mock_loop = MagicMock()
+
+    with patch("htd_client.async_get_model_info", new_callable=AsyncMock) as mock_get_info:
+        mock_get_info.side_effect = OSError("Connection refused")
+
+        with pytest.raises(HtdConnectionError) as exc_info:
+            await async_get_client(loop=mock_loop, network_address=("1.2.3.4", 10006))
+
+        assert isinstance(exc_info.value.__cause__, OSError)
+
+@pytest.mark.asyncio
+async def test_async_get_client_wraps_os_error_from_connect():
+    mock_loop = MagicMock()
+
+    with patch("htd_client.async_get_model_info", new_callable=AsyncMock) as mock_get_info:
+        model_info = HtdConstants.SUPPORTED_MODELS["mca66"]
+        mock_get_info.return_value = model_info
+
+        with patch(
+            "htd_client.mca_client.HtdMcaClient.async_connect", new_callable=AsyncMock
+        ) as mock_connect:
+            mock_connect.side_effect = OSError("Connection refused")
+
+            with pytest.raises(HtdConnectionError) as exc_info:
+                await async_get_client(loop=mock_loop, network_address=("1.2.3.4", 10006))
+
+            assert isinstance(exc_info.value.__cause__, OSError)

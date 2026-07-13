@@ -18,6 +18,7 @@ from typing import Tuple
 import htd_client.utils
 from .base_client import BaseClient
 from .constants import HtdCommonCommands, HtdModelInfo, HtdDeviceKind, HtdConstants
+from .exceptions import HtdConnectionError
 from .lync_client import HtdLyncClient
 from .mca_client import HtdMcaClient
 
@@ -43,16 +44,20 @@ async def async_get_client(
         HtdClient: The new client object.
     """
 
-    model_info = await async_get_model_info(
-        loop if loop is not None else asyncio.get_running_loop(),
-        network_address=network_address,
-        serial_address=serial_address,
-        retry_attempts=retry_attempts,
-    )
+    address = f"serial: {serial_address}" if serial_address is not None else f"network: {network_address}"
+
+    try:
+        model_info = await async_get_model_info(
+            loop if loop is not None else asyncio.get_running_loop(),
+            network_address=network_address,
+            serial_address=serial_address,
+            retry_attempts=retry_attempts,
+        )
+    except OSError as e:
+        raise HtdConnectionError(f"Unable to connect to HTD device ({address}): {e}") from e
 
     if model_info is None:
-        address = f"serial: {serial_address}" if serial_address is not None else f"network: {network_address}"
-        raise ValueError(
+        raise HtdConnectionError(
             f"Unable to detect HTD device model ({address}). "
             f"Verify the device is powered on and the path/address is correct."
         )
@@ -78,7 +83,10 @@ async def async_get_client(
     else:
         raise ValueError(f"Unknown Device Kind: {model_info['kind']}")
 
-    await client.async_connect()
+    try:
+        await client.async_connect()
+    except OSError as e:
+        raise HtdConnectionError(f"Unable to connect to HTD device ({address}): {e}") from e
 
     return client
 
