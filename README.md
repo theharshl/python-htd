@@ -48,6 +48,19 @@ async def main():
 asyncio.run(main())
 ```
 
+```python
+# Or connect over serial (RS-232, or USB-serial adapter)
+client = await async_get_client(serial_address="/dev/ttyUSB0")
+```
+
+### Serial Connection Reliability
+
+Serial connections — especially cheap USB-serial adapters — are hardened against the failure modes that used to trip them up:
+
+- Opening the port no longer races the device's DTR-triggered reset; the client waits out a settle delay before writing.
+- Replies delivered across multiple USB packets are now read to completion instead of being misread as a failed probe.
+- A single corrupted or dropped byte resyncs cleanly instead of permanently desyncing the parser into a stream of errors.
+
 ### Zone and Source Names (Lync only)
 
 ```python
@@ -89,7 +102,7 @@ Factory function that auto-detects the device model and returns the appropriate 
 |-----------|------|-------------|
 | `network_address` | `(str, int)` | `(host, port)` for TCP connection |
 | `serial_address` | `str` | Serial port path for RS-232 connection |
-| `retry_attempts` | `int` | Command retry count (default: 5) |
+| `retry_attempts` | `int` | Command retry count (default: 3) |
 
 ### `BaseClient` methods
 
