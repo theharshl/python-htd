@@ -23,6 +23,7 @@ from serial_asyncio import create_serial_connection
 
 import htd_client
 from .constants import HtdConstants, HtdDeviceKind, ONE_SECOND, HtdModelInfo, HtdCommonCommands
+from .exceptions import HtdConnectionError
 from .models import ZoneDetail
 
 _LOGGER = logging.getLogger(__name__)
@@ -145,6 +146,7 @@ class BaseClient(asyncio.Protocol):
         self._connection = transport
         self._reconnect_delay = 1.0
         self._heartbeat_task = asyncio.create_task(self._heartbeat())
+        self._loop.create_task(self._broadcast(None))
 
 
     async def _heartbeat(self):
@@ -154,7 +156,12 @@ class BaseClient(asyncio.Protocol):
             await asyncio.sleep(HtdConstants.SERIAL_SETTLE_DELAY)
 
         while self._connected:
-            await self.refresh()
+            try:
+                await self.refresh()
+            except HtdConnectionError:
+                # the link dropped between the loop check and the write; connection_lost
+                # already owns the reconnect, so exit rather than raising out of a bare task
+                return
             await asyncio.sleep(60)
 
 
@@ -195,6 +202,8 @@ class BaseClient(asyncio.Protocol):
 
         if not self._disconnected:
             self._ensure_reconnect_task()
+
+        self._loop.create_task(self._broadcast(None))
 
     def _ensure_reconnect_task(self):
         """Start the backoff loop unless one is already running.
@@ -529,6 +538,8 @@ class BaseClient(asyncio.Protocol):
         data_code: int,
         extra_data: bytearray = None
     ):
+        if self._connection is None or not self._connected:
+            raise HtdConnectionError("not connected")
 
         cmd = htd_client.utils.build_command(zone, command, data_code, extra_data)
 

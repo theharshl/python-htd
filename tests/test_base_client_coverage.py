@@ -173,6 +173,7 @@ def test_process_next_command_parsing(client):
 async def test_send_and_validate_success(client):
     client._connection = MagicMock()
     client._connection.write = MagicMock()
+    client._connected = True
     client._socket_lock = asyncio.Lock()
     
     validate_func = MagicMock(side_effect=[False, True]) # Fail first check, succeed second
@@ -188,6 +189,7 @@ async def test_send_and_validate_success(client):
 @pytest.mark.asyncio
 async def test_send_and_validate_timeout(client):
     client._connection = MagicMock()
+    client._connected = True
     client._socket_lock = asyncio.Lock()
     client._retry_attempts = 1
     client._command_retry_timeout = 0 # Immediate retry
