@@ -11,6 +11,7 @@ class HtdDeviceKind(Enum):
 
 
 class HtdModelInfo(TypedDict):
+    key: str
     zones: int
     sources: int
     friendly_name: str
@@ -29,6 +30,7 @@ class HtdConstants:
 
     SUPPORTED_MODELS: Dict[str, HtdModelInfo] = {
         "mca66": {
+            "key": "mca66",
             "identifier": b'Wangine_MCA66',
             "zones": 6,
             "sources": 6,
@@ -37,6 +39,7 @@ class HtdConstants:
             "kind": HtdDeviceKind.mca,
         },
         "lync6": {
+            "key": "lync6",
             "identifier": b"Lync 6",
             "zones": 6,
             "sources": 12,
@@ -45,6 +48,7 @@ class HtdConstants:
             "kind": HtdDeviceKind.lync,
         },
         "lync12": {
+            "key": "lync12",
             "identifier": b"Lync12",
             "zones": 12,
             "sources": 19,

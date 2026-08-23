@@ -25,6 +25,26 @@ from .mca_client import HtdMcaClient
 _LOGGER = logging.getLogger(__name__)
 
 
+def get_model_info(key: str | None) -> HtdModelInfo | None:
+    """
+    Look up a model definition by its persistable key, without touching the device.
+
+    This is the counterpart to `async_get_model_info`: a consumer records
+    `model_info["key"]` once, and can rebuild the same client on later runs while the
+    device is powered off.
+
+    Args:
+        key (str | None): a key from `HtdConstants.SUPPORTED_MODELS`, e.g. "mca66".
+
+    Returns:
+        HtdModelInfo | None: the model definition, or None if the key is unknown or missing.
+    """
+    if key is None:
+        return None
+
+    return HtdConstants.SUPPORTED_MODELS.get(key)
+
+
 async def async_get_client(
     serial_address: str = None,
     network_address: Tuple[str, int] = None,
