@@ -17,6 +17,7 @@ from typing import Dict, Tuple
 
 from .base_client import BaseClient
 from .constants import HtdConstants, HtdMcaCommands, HtdMcaConstants, HtdModelInfo
+from .exceptions import HtdConnectionError
 from .models import ZoneDetail
 
 _LOGGER = logging.getLogger(__name__)
@@ -190,6 +191,9 @@ class HtdMcaClient(BaseClient):
             dict[int, ZoneDetail]: a dict where the key represents the zone
             number, and the value are the details of the zone
         """
+
+        if self._connection is None or not self._connected:
+            raise HtdConnectionError("not connected")
 
         refresh_zone = zone if zone is not None else 0
         await self.refresh_zone(refresh_zone)

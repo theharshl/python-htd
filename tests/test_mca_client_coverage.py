@@ -19,6 +19,7 @@ def mca_client():
     }
     client = HtdMcaClient(loop, model_info)
     client._connection = MagicMock()
+    client._connected = True
     client._socket_lock = asyncio.Lock()
     # Mock _zone_data for all zones
     client._zone_data = {
