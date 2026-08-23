@@ -49,6 +49,8 @@ class BaseClient(asyncio.Protocol):
     _heartbeat_task: asyncio.Task = None
     _buffer: bytearray | None = None
     _zone_data: Dict[int, ZoneDetail] = None
+    _source_names: Dict[int, str] = None
+    _zone_names: Dict[int, str] = None
     _zones_loaded: int = 0
     _connected: bool = False
     _ready: bool = False
@@ -523,6 +525,24 @@ class BaseClient(asyncio.Protocol):
     def get_zone_name(self, zone: int) -> str | None:
         """Get the cached zone name, or None if not yet queried."""
         return self._zone_names.get(zone)
+
+    def get_source_names(self) -> Dict[int, str]:
+        """
+        Get every source name the controller has actually reported.
+
+        Unlike `get_source_name`, this never invents a placeholder, so the result is safe
+        to persist across restarts.
+        """
+        return dict(self._source_names or {})
+
+    def get_zone_names(self) -> Dict[int, str]:
+        """
+        Get every zone name the controller has actually reported.
+
+        Unlike `get_zone_name`, this never invents a placeholder, so the result is safe
+        to persist across restarts.
+        """
+        return dict(self._zone_names or {})
 
     def get_zone(self, zone: int):
         """
