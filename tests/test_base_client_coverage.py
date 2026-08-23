@@ -94,22 +94,15 @@ async def test_reconnect_logic(client):
     # Actually checking internal logic of _async_reconnect handles exceptions and retries
     
     # Rerunning logic:
-    # await client._async_reconnect() -> calls connect() -> raises Exception.
-    # catches exception -> updates delay -> creates task.
-    # func returns.
-    
-    # Check that new task was created
-    # We need to check if asyncio.create_task was called. 
-    # But we didn't patch it inside the test function scope valid for the 'await client._async_reconnect()'.
-    # We need to wrap the call.
-    
+    # await client._async_reconnect() -> loops internally: calls connect() -> raises
+    # Exception, doubles the delay, and keeps looping until connect() succeeds, then
+    # returns.
+
     with patch.object(client, 'async_connect', new_callable=AsyncMock) as mock_connect:
         mock_connect.side_effect = [Exception("Fail"), None]
         with patch("asyncio.sleep", new_callable=AsyncMock):
-            with patch("asyncio.create_task") as mock_create_task:
-                 await client._async_reconnect()
-                 assert mock_connect.call_count == 1
-                 mock_create_task.assert_called()
+            await client._async_reconnect()
+            assert mock_connect.call_count == 2
 
 def test_data_received(client):
     # Mock _process_next_command to consume data

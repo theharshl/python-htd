@@ -121,6 +121,24 @@ class BaseClient(asyncio.Protocol):
         else:
             raise ValueError("No address provided")
 
+    async def async_start(self) -> None:
+        """
+        Connect if the device is reachable, and otherwise keep trying in the background.
+
+        Unlike `async_connect`, this never raises. It is meant for a long-lived consumer
+        that wants to come up whether or not the device is currently powered on.
+        """
+        self._disconnected = False
+
+        try:
+            await self.async_connect()
+        except Exception as e:
+            _LOGGER.warning(
+                "Initial connection to the HTD device failed (%s); retrying in the background",
+                e,
+            )
+            self._ensure_reconnect_task()
+
     def connection_made(self, transport: Transport):
         _LOGGER.debug("connected")
         self._connected = True
@@ -176,21 +194,34 @@ class BaseClient(asyncio.Protocol):
             self._heartbeat_task.cancel()
 
         if not self._disconnected:
-            if self._reconnect_task is None or self._reconnect_task.done():
-                self._reconnect_task = asyncio.create_task(self._async_reconnect())
+            self._ensure_reconnect_task()
+
+    def _ensure_reconnect_task(self):
+        """Start the backoff loop unless one is already running.
+
+        A single task handle owns the whole loop. The previous implementation re-scheduled
+        itself by reassigning this handle from inside its own running task, which left a
+        window where `connection_lost` saw a stale not-done handle and started a second loop.
+        """
+        if self._reconnect_task is None or self._reconnect_task.done():
+            self._reconnect_task = asyncio.create_task(self._async_reconnect())
 
     async def _async_reconnect(self):
-        """Reconnect with exponential backoff."""
-        _LOGGER.info(f"Attempting to reconnect in {self._reconnect_delay} seconds...")
-        await asyncio.sleep(self._reconnect_delay)
-        
-        try:
-            await self.async_connect()
-            # Delay is reset in connection_made upon success
-        except Exception as e:
-            _LOGGER.error(f"Reconnection attempt failed: {e}")
-            self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
-            self._reconnect_task = asyncio.create_task(self._async_reconnect())
+        """Reconnect with exponential backoff until connected or torn down."""
+        while not self._disconnected and not self._connected:
+            _LOGGER.info(f"Attempting to reconnect in {self._reconnect_delay} seconds...")
+            await asyncio.sleep(self._reconnect_delay)
+
+            if self._disconnected:
+                return
+
+            try:
+                await self.async_connect()
+                # Delay is reset in connection_made upon success
+                return
+            except Exception as e:
+                _LOGGER.error(f"Reconnection attempt failed: {e}")
+                self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
 
 
     async def async_wait_until_ready(self):
@@ -206,7 +237,13 @@ class BaseClient(asyncio.Protocol):
 
     def disconnect(self):
         self._disconnected = True
-        self._connection.close()
+
+        if self._reconnect_task is not None:
+            self._reconnect_task.cancel()
+            self._reconnect_task = None
+
+        if self._connection is not None:
+            self._connection.close()
 
 
     def _process_next_command(self, data: bytes):
