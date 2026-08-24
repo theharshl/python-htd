@@ -25,6 +25,72 @@ from .mca_client import HtdMcaClient
 _LOGGER = logging.getLogger(__name__)
 
 
+def get_model_info(key: str | None) -> HtdModelInfo | None:
+    """
+    Look up a model definition by its persistable key, without touching the device.
+
+    This is the counterpart to `async_get_model_info`: a consumer records
+    `model_info["key"]` once, and can rebuild the same client on later runs while the
+    device is powered off.
+
+    Args:
+        key (str | None): a key from `HtdConstants.SUPPORTED_MODELS`, e.g. "mca66".
+
+    Returns:
+        HtdModelInfo | None: the model definition, or None if the key is unknown or missing.
+    """
+    if key is None:
+        return None
+
+    return HtdConstants.SUPPORTED_MODELS.get(key)
+
+
+def build_client(
+    model_info: HtdModelInfo,
+    *,
+    serial_address: str = None,
+    network_address: Tuple[str, int] = None,
+    loop: asyncio.AbstractEventLoop = None,
+    retry_attempts: int = HtdConstants.DEFAULT_RETRY_ATTEMPTS,
+) -> BaseClient:
+    """
+    Create a client from a known model definition, without touching the device.
+
+    No I/O happens here — nothing is opened, probed or connected. Call `async_connect()`
+    or `async_start()` afterwards.
+
+    Args:
+        model_info (HtdModelInfo): the model definition, from `get_model_info` or
+            `async_get_model_info`.
+        network_address (Tuple[str, int]): the address to communicate with over TCP.
+        serial_address (str): the location of the serial port.
+        loop (asyncio.AbstractEventLoop): the event loop to use.
+        retry_attempts (int): number of times to retry a command before failing.
+
+    Returns:
+        BaseClient: an unconnected client of the class matching the model's kind.
+
+    Raises:
+        ValueError: the model's kind is not recognized.
+    """
+    resolved_loop = loop if loop is not None else asyncio.get_running_loop()
+
+    if model_info["kind"] == HtdDeviceKind.mca:
+        client_class = HtdMcaClient
+    elif model_info["kind"] == HtdDeviceKind.lync:
+        client_class = HtdLyncClient
+    else:
+        raise ValueError(f"Unknown Device Kind: {model_info['kind']}")
+
+    return client_class(
+        resolved_loop,
+        model_info,
+        network_address=network_address,
+        serial_address=serial_address,
+        retry_attempts=retry_attempts,
+    )
+
+
 async def async_get_client(
     serial_address: str = None,
     network_address: Tuple[str, int] = None,
@@ -32,7 +98,7 @@ async def async_get_client(
     retry_attempts: int = HtdConstants.DEFAULT_RETRY_ATTEMPTS,
 ) -> BaseClient:
     """
-    Create a new client object.
+    Probe the device for its model, then create and connect a client.
 
     Args:
         network_address (str): The address to communicate with over TCP.
@@ -62,26 +128,13 @@ async def async_get_client(
             f"Verify the device is powered on and the path/address is correct."
         )
 
-    if model_info["kind"] == HtdDeviceKind.mca:
-        client = HtdMcaClient(
-            loop if loop is not None else asyncio.get_running_loop(),
-            model_info,
-            network_address=network_address,
-            serial_address=serial_address,
-            retry_attempts=retry_attempts,
-        )
-
-    elif model_info["kind"] == HtdDeviceKind.lync:
-        client = HtdLyncClient(
-            loop if loop is not None else asyncio.get_running_loop(),
-            model_info,
-            network_address=network_address,
-            serial_address=serial_address,
-            retry_attempts=retry_attempts,
-        )
-
-    else:
-        raise ValueError(f"Unknown Device Kind: {model_info['kind']}")
+    client = build_client(
+        model_info,
+        serial_address=serial_address,
+        network_address=network_address,
+        loop=loop,
+        retry_attempts=retry_attempts,
+    )
 
     try:
         await client.async_connect()

@@ -23,6 +23,7 @@ from serial_asyncio import create_serial_connection
 
 import htd_client
 from .constants import HtdConstants, HtdDeviceKind, ONE_SECOND, HtdModelInfo, HtdCommonCommands
+from .exceptions import HtdConnectionError
 from .models import ZoneDetail
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +50,8 @@ class BaseClient(asyncio.Protocol):
     _heartbeat_task: asyncio.Task = None
     _buffer: bytearray | None = None
     _zone_data: Dict[int, ZoneDetail] = None
+    _source_names: Dict[int, str] = None
+    _zone_names: Dict[int, str] = None
     _zones_loaded: int = 0
     _connected: bool = False
     _ready: bool = False
@@ -119,12 +122,31 @@ class BaseClient(asyncio.Protocol):
         else:
             raise ValueError("No address provided")
 
+    async def async_start(self) -> None:
+        """
+        Connect if the device is reachable, and otherwise keep trying in the background.
+
+        Unlike `async_connect`, this never raises. It is meant for a long-lived consumer
+        that wants to come up whether or not the device is currently powered on.
+        """
+        self._disconnected = False
+
+        try:
+            await self.async_connect()
+        except Exception as e:
+            _LOGGER.warning(
+                "Initial connection to the HTD device failed (%s); retrying in the background",
+                e,
+            )
+            self._ensure_reconnect_task()
+
     def connection_made(self, transport: Transport):
         _LOGGER.debug("connected")
         self._connected = True
         self._connection = transport
         self._reconnect_delay = 1.0
         self._heartbeat_task = asyncio.create_task(self._heartbeat())
+        self._loop.create_task(self._broadcast(None))
 
 
     async def _heartbeat(self):
@@ -134,7 +156,12 @@ class BaseClient(asyncio.Protocol):
             await asyncio.sleep(HtdConstants.SERIAL_SETTLE_DELAY)
 
         while self._connected:
-            await self.refresh()
+            try:
+                await self.refresh()
+            except HtdConnectionError:
+                # the link dropped between the loop check and the write; connection_lost
+                # already owns the reconnect, so exit rather than raising out of a bare task
+                return
             await asyncio.sleep(60)
 
 
@@ -174,21 +201,36 @@ class BaseClient(asyncio.Protocol):
             self._heartbeat_task.cancel()
 
         if not self._disconnected:
-            if self._reconnect_task is None or self._reconnect_task.done():
-                self._reconnect_task = asyncio.create_task(self._async_reconnect())
+            self._ensure_reconnect_task()
+
+        self._loop.create_task(self._broadcast(None))
+
+    def _ensure_reconnect_task(self):
+        """Start the backoff loop unless one is already running.
+
+        A single task handle owns the whole loop. The previous implementation re-scheduled
+        itself by reassigning this handle from inside its own running task, which left a
+        window where `connection_lost` saw a stale not-done handle and started a second loop.
+        """
+        if self._reconnect_task is None or self._reconnect_task.done():
+            self._reconnect_task = asyncio.create_task(self._async_reconnect())
 
     async def _async_reconnect(self):
-        """Reconnect with exponential backoff."""
-        _LOGGER.info(f"Attempting to reconnect in {self._reconnect_delay} seconds...")
-        await asyncio.sleep(self._reconnect_delay)
-        
-        try:
-            await self.async_connect()
-            # Delay is reset in connection_made upon success
-        except Exception as e:
-            _LOGGER.error(f"Reconnection attempt failed: {e}")
-            self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
-            self._reconnect_task = asyncio.create_task(self._async_reconnect())
+        """Reconnect with exponential backoff until connected or torn down."""
+        while not self._disconnected and not self._connected:
+            _LOGGER.info(f"Attempting to reconnect in {self._reconnect_delay} seconds...")
+            await asyncio.sleep(self._reconnect_delay)
+
+            if self._disconnected:
+                return
+
+            try:
+                await self.async_connect()
+                # Delay is reset in connection_made upon success
+                return
+            except Exception as e:
+                _LOGGER.error(f"Reconnection attempt failed: {e}")
+                self._reconnect_delay = min(self._reconnect_delay * 2, self._max_reconnect_delay)
 
 
     async def async_wait_until_ready(self):
@@ -204,7 +246,13 @@ class BaseClient(asyncio.Protocol):
 
     def disconnect(self):
         self._disconnected = True
-        self._connection.close()
+
+        if self._reconnect_task is not None:
+            self._reconnect_task.cancel()
+            self._reconnect_task = None
+
+        if self._connection is not None:
+            self._connection.close()
 
 
     def _process_next_command(self, data: bytes):
@@ -490,6 +538,8 @@ class BaseClient(asyncio.Protocol):
         data_code: int,
         extra_data: bytearray = None
     ):
+        if self._connection is None or not self._connected:
+            raise HtdConnectionError("not connected")
 
         cmd = htd_client.utils.build_command(zone, command, data_code, extra_data)
 
@@ -523,6 +573,24 @@ class BaseClient(asyncio.Protocol):
     def get_zone_name(self, zone: int) -> str | None:
         """Get the cached zone name, or None if not yet queried."""
         return self._zone_names.get(zone)
+
+    def get_source_names(self) -> Dict[int, str]:
+        """
+        Get every source name the controller has actually reported.
+
+        Unlike `get_source_name`, this never invents a placeholder, so the result is safe
+        to persist across restarts.
+        """
+        return dict(self._source_names or {})
+
+    def get_zone_names(self) -> Dict[int, str]:
+        """
+        Get every zone name the controller has actually reported.
+
+        Unlike `get_zone_name`, this never invents a placeholder, so the result is safe
+        to persist across restarts.
+        """
+        return dict(self._zone_names or {})
 
     def get_zone(self, zone: int):
         """

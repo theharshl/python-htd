@@ -18,6 +18,7 @@ def lync_client():
     }
     client = HtdLyncClient(loop, model_info)
     client._connection = MagicMock()
+    client._connected = True
     client._socket_lock = asyncio.Lock()
     # Mock _zone_data
     client._zone_data = {

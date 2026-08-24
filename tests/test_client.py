@@ -27,6 +27,8 @@ def htd_instance():
         socket_timeout=MOCK_SOCKET_TIMEOUT,
     )
     client._zone_data = {}
+    client._connection = MagicMock()
+    client._connected = True
     return client
 
 

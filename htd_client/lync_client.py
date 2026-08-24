@@ -18,6 +18,7 @@ from typing import Tuple
 import htd_client.utils
 from .base_client import BaseClient
 from .constants import HtdConstants, HtdLyncCommands, HtdLyncConstants, HtdModelInfo
+from .exceptions import HtdConnectionError
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,6 +84,9 @@ class HtdLyncClient(BaseClient):
         Args:
             zone (int): the zone to refresh, or None to refresh all zones
         """
+        if self._connection is None or not self._connected:
+            raise HtdConnectionError("not connected")
+
         await self._send_cmd(
             zone if zone is not None else 0,
             HtdLyncCommands.QUERY_COMMAND_CODE,

@@ -94,6 +94,38 @@ await client.async_set_dnd(zone=1, dnd=True)
 
 ## API Reference
 
+### `get_model_info(key: str | None) -> HtdModelInfo | None`
+
+Look up a model definition by its persistable key (`"mca66"`, `"lync6"`, `"lync12"`) without
+touching the device. Returns `None` for an unknown or missing key. Pair it with
+`build_client` to bring a client up while the device is powered off:
+
+```python
+from htd_client import build_client, get_model_info
+
+model_info = get_model_info(stored_key)      # None if never stored
+if model_info is not None:
+    client = build_client(model_info, network_address=("192.168.1.2", 10006))
+    await client.async_start()               # connects in the background, never raises
+```
+
+Every entry in `HtdConstants.SUPPORTED_MODELS` carries its own key under `model_info["key"]`,
+so a caller that probed once can record it and skip the probe on later runs.
+
+### `build_client(model_info, *, serial_address=None, network_address=None, loop=None, retry_attempts=3) -> BaseClient`
+
+Create a client of the class matching `model_info["kind"]`. Performs no I/O — nothing is
+opened, probed or connected. Raises `ValueError` for an unrecognized kind. Call
+`async_connect()` or `async_start()` afterwards.
+
+### `BaseClient.async_start() -> None`
+
+Connect if the device is reachable, and otherwise start a background retry loop
+(1s, doubling to a 60s ceiling) and return. Unlike `async_connect()`, this never raises.
+Intended for long-lived consumers that must come up whether or not the device is powered on.
+
+`disconnect()` stops that loop and is safe to call on a client that never connected.
+
 ### `async_get_client(...) -> BaseClient`
 
 Factory function that auto-detects the device model and returns the appropriate client.
@@ -134,9 +166,22 @@ Factory function that auto-detects the device model and returns the appropriate 
 | `get_zone(zone)` | Return cached `ZoneDetail` for a zone |
 | `get_zone_name(zone)` | Return cached zone name |
 | `get_source_name(source)` | Return cached source name |
+| `get_source_names() -> dict[int, str]` | Every source name the controller has reported. Unlike `get_source_name(n)`, it never invents a `"Source N"` placeholder, so the result is safe to persist. |
+| `get_zone_names() -> dict[int, str]` | The same, for zone names (Lync only). |
 | `get_zone_count()` | Return number of zones for this model |
 | `get_source_count()` | Return number of sources for this model |
 | `disconnect()` | Close the connection |
+
+### Behavior change in 0.1.8
+
+Commands and `refresh()` now raise `HtdConnectionError("not connected")` when the client is
+disconnected. Previously they raised `AttributeError: 'NoneType' object has no attribute
+'write'`. Direct consumers catching `AttributeError` must switch to `HtdConnectionError`.
+
+`connection_made` and `connection_lost` now broadcast to subscribers with `zone=None`, so a
+subscriber is notified of transport state changes and not only of incoming data. Subscribers
+that assumed a `None` zone meant "data arrived for an unknown zone" should re-read state from
+the client rather than assuming a zone payload is present.
 
 ## Contributing
 
